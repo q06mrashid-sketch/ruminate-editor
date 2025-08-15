@@ -1,148 +1,122 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Text Fields Manager</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Ruminate CMS Editor</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 2rem;
-      line-height: 1.5;
-    }
+    body { font-family: system-ui, Arial; margin: 2rem; line-height: 1.5; }
     h1 { text-align: center; }
-    .field-list { margin-top: 1rem; }
-    .field-item {
-      display: flex;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-    .field-item label {
-      margin-right: 0.5rem;
-      width: 150px;
-      font-weight: bold;
-    }
-    .field-item input[type="text"] {
-      flex: 1;
-      padding: 4px 6px;
-      margin-right: 0.5rem;
-    }
-    .field-item button {
-      padding: 4px 8px;
-      background: #f44336;
-      border: none;
-      color: #fff;
-      cursor: pointer;
-    }
-    .field-item button:hover {
-      background: #d32f2f;
-    }
-    #addFieldForm {
-      display: flex;
-      align-items: center;
-      margin-bottom: 1rem;
-    }
-    #addFieldForm input[type="text"] {
-      flex: 1;
-      padding: 4px 6px;
-      margin-right: 0.5rem;
-    }
-    #addFieldForm button {
-      padding: 4px 8px;
-      background: #4CAF50;
-      border: none;
-      color: #fff;
-      cursor: pointer;
-    }
-    #addFieldForm button:hover {
-      background: #388E3C;
-    }
     #editor { display: none; }
+    .row { display:flex; gap:10px; margin-bottom:10px; align-items:center; }
+    .row label { width:140px; font-weight:600; }
+    .row input[type="text"] { flex:1; padding:8px; }
+    .row button { padding:8px 12px; }
+    .list { margin-top:18px; }
+    .hint { color:#666; font-size:13px; margin-bottom:12px; }
   </style>
 </head>
 <body>
   <div id="editor">
-    <h1>Text Fields Manager</h1>
-    <form id="addFieldForm">
-      <input type="text" id="newLabel" placeholder="Label title" required />
-      <button type="submit">Add Field</button>
+    <h1>Ruminate CMS</h1>
+    <div class="hint">Keys used by the app: <b>special 1</b>, <b>special 2</b>, <b>rumi quote</b></div>
+
+    <form id="addForm" class="row">
+      <input id="newKey" type="text" placeholder="key e.g. special 1" required />
+      <input id="newVal" type="text" placeholder="value text" required />
+      <button type="submit">Add / Update</button>
     </form>
-    <div class="field-list" id="fieldList"></div>
+
+    <div id="list" class="list"></div>
   </div>
 
   <script>
-    const password = "Misterbignose12!";
+    // ---- CONFIG: set this to your functions URL ----
+    const FUNCTIONS_URL = "https://${SUPABASE_PROJECT_REF}.functions.supabase.co"; // replace with echo result
+    const WRITE_SECRET = "Misterbignose12!"; // used by cms-set (checked server-side)
+    const VIEW_PASSWORD = "Misterbignose12!"; // simple gate for the page UI
 
+    // Simple password gate for the editor UI
     function showEditor() {
-      document.getElementById("editor").style.display = "block";
-      localStorage.setItem("ruminateAuth", "true");
+      document.getElementById('editor').style.display = 'block';
+      localStorage.setItem('ruminateAuth', 'true');
     }
-
-    window.onload = function () {
-      if (localStorage.getItem("ruminateAuth") === "true") {
+    window.onload = async () => {
+      if (localStorage.getItem('ruminateAuth') === 'true') {
         showEditor();
+        await loadAll();
       } else {
         const entered = prompt("Enter password:");
-        if (entered === password) showEditor();
+        if (entered === VIEW_PASSWORD) {
+          showEditor();
+          await loadAll();
+        }
       }
     };
 
-    // Load fields from localStorage or start with empty array
-    const fields = JSON.parse(localStorage.getItem('ruminateEntries') || '[]');
-
-    function saveFields() {
-      localStorage.setItem('ruminateEntries', JSON.stringify(fields));
+    async function loadAll() {
+      const res = await fetch(`${FUNCTIONS_URL}/cms-get`);
+      const data = await res.json();
+      renderList(data);
     }
 
-    const form = document.getElementById('addFieldForm');
-    const newLabelInput = document.getElementById('newLabel');
-    const fieldList = document.getElementById('fieldList');
+    async function upsertKV(key, value) {
+      const res = await fetch(`${FUNCTIONS_URL}/cms-set`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-cms-secret': WRITE_SECRET
+        },
+        body: JSON.stringify({ key, value })
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || 'Save failed');
+    }
 
-    function renderFields() {
-      fieldList.innerHTML = '';
-      fields.forEach((field, index) => {
-        const item = document.createElement('div');
-        item.className = 'field-item';
+    function renderList(map) {
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      const keys = Object.keys(map).sort();
+      if (keys.length === 0) {
+        list.innerHTML = '<div>No entries yet.</div>';
+        return;
+      }
+      keys.forEach(k => {
+        const row = document.createElement('div');
+        row.className = 'row';
 
-        const label = document.createElement('label');
-        label.textContent = field.title;
-        item.appendChild(label);
+        const lab = document.createElement('label');
+        lab.textContent = k;
+        row.appendChild(lab);
 
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.value = field.value;
-        input.addEventListener('input', () => {
-          fields[index].value = input.value;
-          saveFields();
-        });
-        item.appendChild(input);
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.value = map[k] || '';
+        row.appendChild(inp);
 
-        const removeBtn = document.createElement('button');
-        removeBtn.textContent = 'Remove';
-        removeBtn.addEventListener('click', () => {
-          fields.splice(index, 1);
-          saveFields();
-          renderFields();
-        });
-        item.appendChild(removeBtn);
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = 'Save';
+        saveBtn.onclick = async () => {
+          await upsertKV(k, inp.value);
+          alert('Saved');
+        };
+        row.appendChild(saveBtn);
 
-        fieldList.appendChild(item);
+        list.appendChild(row);
       });
     }
 
-    form.addEventListener('submit', (e) => {
+    // Add / update form
+    document.getElementById('addForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const title = newLabelInput.value.trim();
-      if (title) {
-        fields.push({ title, value: '' });
-        newLabelInput.value = '';
-        saveFields();
-        renderFields();
-      }
+      const key = (document.getElementById('newKey').value || '').trim();
+      const val = document.getElementById('newVal').value || '';
+      if (!key) return;
+      await upsertKV(key, val);
+      document.getElementById('newKey').value = '';
+      document.getElementById('newVal').value = '';
+      await loadAll();
     });
-
-    // Initial render
-    renderFields();
   </script>
 </body>
 </html>
