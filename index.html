@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text Fields Manager</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      line-height: 1.5;
+    }
+    h1 { text-align: center; }
+    .field-list { margin-top: 1rem; }
+    .field-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .field-item label {
+      margin-right: 0.5rem;
+      width: 150px;
+      font-weight: bold;
+    }
+    .field-item input[type="text"] {
+      flex: 1;
+      padding: 4px 6px;
+      margin-right: 0.5rem;
+    }
+    .field-item button {
+      padding: 4px 8px;
+      background: #f44336;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+    }
+    .field-item button:hover {
+      background: #d32f2f;
+    }
+    #addFieldForm {
+      display: flex;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    #addFieldForm input[type="text"] {
+      flex: 1;
+      padding: 4px 6px;
+      margin-right: 0.5rem;
+    }
+    #addFieldForm button {
+      padding: 4px 8px;
+      background: #4CAF50;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+    }
+    #addFieldForm button:hover {
+      background: #388E3C;
+    }
+  </style>
+</head>
+<body>
+  <h1>Text Fields Manager</h1>
+  <form id="addFieldForm">
+    <input type="text" id="newLabel" placeholder="Label title" required />
+    <button type="submit">Add Field</button>
+  </form>
+  <div class="field-list" id="fieldList"></div>
+
+  <script>
+    const form = document.getElementById('addFieldForm');
+    const newLabelInput = document.getElementById('newLabel');
+    const fieldList = document.getElementById('fieldList');
+
+    // Data model storing fields
+    const fields = [];
+
+    // Render fields
+    function renderFields() {
+      fieldList.innerHTML = '';
+      fields.forEach((field, index) => {
+        const item = document.createElement('div');
+        item.className = 'field-item';
+
+        const label = document.createElement('label');
+        label.textContent = field.title;
+        item.appendChild(label);
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = field.value;
+        input.addEventListener('input', () => {
+          fields[index].value = input.value;
+        });
+        item.appendChild(input);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.textContent = 'Remove';
+        removeBtn.addEventListener('click', () => {
+          fields.splice(index, 1);
+          renderFields();
+        });
+        item.appendChild(removeBtn);
+
+        fieldList.appendChild(item);
+      });
+    }
+
+    // Add new field
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const title = newLabelInput.value.trim();
+      if (title) {
+        fields.push({ title, value: '' });
+        newLabelInput.value = '';
+        renderFields();
+      }
+    });
+  </script>
+</body>
+</html>
