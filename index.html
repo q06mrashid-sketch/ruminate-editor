@@ -71,6 +71,8 @@
     const form = document.getElementById('addFieldForm');
     const newLabelInput = document.getElementById('newLabel');
     const fieldList = document.getElementById('fieldList');
+    const fields = JSON.stringify(currentFieldsArray);
+localStorage.setItem("ruminateEntries", fields);
     const password = "Misterbignose12!";
   function showEditor() {
     document.getElementById("editor").style.display = "block";
