@@ -57,40 +57,47 @@
     #addFieldForm button:hover {
       background: #388E3C;
     }
+    #editor { display: none; }
   </style>
 </head>
 <body>
-  <h1>Text Fields Manager</h1>
-  <form id="addFieldForm">
-    <input type="text" id="newLabel" placeholder="Label title" required />
-    <button type="submit">Add Field</button>
-  </form>
-  <div class="field-list" id="fieldList"></div>
+  <div id="editor">
+    <h1>Text Fields Manager</h1>
+    <form id="addFieldForm">
+      <input type="text" id="newLabel" placeholder="Label title" required />
+      <button type="submit">Add Field</button>
+    </form>
+    <div class="field-list" id="fieldList"></div>
+  </div>
 
   <script>
+    const password = "Misterbignose12!";
+
+    function showEditor() {
+      document.getElementById("editor").style.display = "block";
+      localStorage.setItem("ruminateAuth", "true");
+    }
+
+    window.onload = function () {
+      if (localStorage.getItem("ruminateAuth") === "true") {
+        showEditor();
+      } else {
+        const entered = prompt("Enter password:");
+        if (entered === password) showEditor();
+      }
+    };
+
+    // Load fields from localStorage or start with empty array
+    const fields = JSON.parse(localStorage.getItem('ruminateEntries') || '[]');
+
+    function saveFields() {
+      localStorage.setItem('ruminateEntries', JSON.stringify(fields));
+    }
+
     const form = document.getElementById('addFieldForm');
     const newLabelInput = document.getElementById('newLabel');
     const fieldList = document.getElementById('fieldList');
-    const fields = JSON.stringify(currentFieldsArray);
-localStorage.setItem("ruminateEntries", fields);
-    const password = "Misterbignose12!";
-  function showEditor() {
-    document.getElementById("editor").style.display = "block";
-    localStorage.setItem("ruminateAuth", "true");
-  }
-  window.onload = function () {
-    if (localStorage.getItem("ruminateAuth") === "true") {
-      showEditor();
-    } else {
-      const entered = prompt("Enter password:");
-      if (entered === password) showEditor();
-    }
-  };
-    
-    // Data model storing fields
-    const fields = [];
 
-    // Render fields
     function renderFields() {
       fieldList.innerHTML = '';
       fields.forEach((field, index) => {
@@ -106,6 +113,7 @@ localStorage.setItem("ruminateEntries", fields);
         input.value = field.value;
         input.addEventListener('input', () => {
           fields[index].value = input.value;
+          saveFields();
         });
         item.appendChild(input);
 
@@ -113,6 +121,7 @@ localStorage.setItem("ruminateEntries", fields);
         removeBtn.textContent = 'Remove';
         removeBtn.addEventListener('click', () => {
           fields.splice(index, 1);
+          saveFields();
           renderFields();
         });
         item.appendChild(removeBtn);
@@ -121,16 +130,19 @@ localStorage.setItem("ruminateEntries", fields);
       });
     }
 
-    // Add new field
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const title = newLabelInput.value.trim();
       if (title) {
         fields.push({ title, value: '' });
         newLabelInput.value = '';
+        saveFields();
         renderFields();
       }
     });
+
+    // Initial render
+    renderFields();
   </script>
 </body>
 </html>
