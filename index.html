@@ -71,7 +71,20 @@
     const form = document.getElementById('addFieldForm');
     const newLabelInput = document.getElementById('newLabel');
     const fieldList = document.getElementById('fieldList');
-
+    const password = "Misterbignose12!";
+  function showEditor() {
+    document.getElementById("editor").style.display = "block";
+    localStorage.setItem("ruminateAuth", "true");
+  }
+  window.onload = function () {
+    if (localStorage.getItem("ruminateAuth") === "true") {
+      showEditor();
+    } else {
+      const entered = prompt("Enter password:");
+      if (entered === password) showEditor();
+    }
+  };
+    
     // Data model storing fields
     const fields = [];
 
