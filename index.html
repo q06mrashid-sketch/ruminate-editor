@@ -5,39 +5,67 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Ruminate CMS Editor</title>
   <style>
-    body { font-family: system-ui, Arial; margin: 2rem; line-height: 1.5; }
+    :root { --fg:#111; --muted:#666; --line:#bbb; --pad:10px; }
+    body { font-family: system-ui, Arial; margin: 2rem; line-height: 1.5; color: var(--fg); }
     h1 { text-align: center; }
     #editor { display: none; }
     .row { display:flex; gap:10px; margin-bottom:10px; align-items:center; }
     .row label { width:140px; font-weight:600; }
-    .row input[type="text"] { flex:1; padding:8px; }
+    .row input[type="text"], .row input[type="password"] { flex:1; padding:8px; }
     .row button { padding:8px 12px; }
     .list { margin-top:18px; }
-    .hint { color:#666; font-size:13px; margin-bottom:12px; }
-    .topbar { display:flex; gap:10px; justify-content:center; margin-bottom:12px; }
+    .hint { color:var(--muted); font-size:13px; margin-bottom:12px; }
+    .topbar { display:flex; gap:10px; justify-content:center; margin-bottom:12px; flex-wrap:wrap; }
     .topbar button { padding:6px 10px; }
-    .section { margin-top:22px; padding-top:6px; border-top:1px dashed #bbb; }
+    .section { margin-top:22px; padding-top:6px; border-top:1px dashed var(--line); }
     .section h2 { margin:6px 0 12px; font-size:18px; }
     .hoursHeader { font-weight:700; color:#333; margin-bottom:6px; }
     .hoursRow { display:flex; gap:10px; align-items:center; margin-bottom:8px; }
     .hoursRow label { width:140px; font-weight:600; }
     .hoursRow input { width:130px; padding:8px; }
     .right { display:flex; gap:10px; justify-content:flex-end; }
+    #err { display:none; color:#b00020; margin:10px 0; }
+    /* Password gate */
+    #gate { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#fff; }
+    #gate .box { width:min(520px, 92vw); border:1px solid var(--line); padding:20px; border-radius:8px; box-shadow:0 6px 22px rgba(0,0,0,0.07); }
+    #gate .box h2 { margin:0 0 12px; }
   </style>
 </head>
 <body>
+
+  <!-- Password gate (no prompt, no blank screen) -->
+  <div id="gate">
+    <div class="box">
+      <h2>Enter page password</h2>
+      <div class="row">
+        <label for="pw">Password</label>
+        <input id="pw" type="password" placeholder="••••••••••••" />
+      </div>
+      <div class="row">
+        <button id="enter">Enter</button>
+        <button id="remember">Remember this device</button>
+      </div>
+      <div class="hint">Tip: You can save your Supabase Anon key after login from the top bar.</div>
+    </div>
+  </div>
+
   <div id="editor">
     <h1>Ruminate CMS</h1>
 
     <div class="topbar">
       <button id="resetAuth">Reset page password</button>
       <button id="setAnon">Set Supabase anon key</button>
+      <button id="setFnsUrl">Set Functions URL</button>
     </div>
 
+    <div id="err"></div>
+
     <div class="hint">
-      Keys used by the app: <b>special 1</b>, <b>special 2</b>, <b>rumi quote</b>, and opening hours:
-      <code>hours.mon.open</code>/<code>hours.mon.close</code> … <code>hours.sun.open</code>/<code>hours.sun.close</code>.
-      Friday has split hours for Jumu'ah: <code>hours.fri.open1</code>, <code>hours.fri.close1</code>, <code>hours.fri.open2</code>, <code>hours.fri.close2</code>.
+      Keys used by the app: <b>special 1</b>, <b>special 2</b>, <b>rumi quote</b>.<br/>
+      Opening hours keys:
+      <code>hours.mon.open/close</code> … <code>hours.sun.open/close</code>.<br/>
+      Friday split hours:
+      <code>hours.fri.open1</code>, <code>hours.fri.close1</code>, <code>hours.fri.open2</code>, <code>hours.fri.close2</code>.
     </div>
 
     <!-- Opening hours editor -->
@@ -71,10 +99,16 @@
   </div>
 
   <script>
-    const FUNCTIONS_URL_DEFAULT = "https://eamewialuovzguldcdcf.functions.supabase.co";
+    // ---- Config (can override via localStorage) ----
+    const DEFAULT_FUNCTIONS_URL = "https://eamewialuovzguldcdcf.functions.supabase.co";
     const WRITE_SECRET = "Misterbignose12!";
     const VIEW_PASSWORD = "Misterbignose12!";
-    const FUNCTIONS_URL = localStorage.getItem('cmsFunctionsUrl') || FUNCTIONS_URL_DEFAULT;
+
+    function getFnsUrl(){ return localStorage.getItem('cmsFunctionsUrl') || DEFAULT_FUNCTIONS_URL; }
+    function setFnsUrl(u){ if(u) localStorage.setItem('cmsFunctionsUrl', u); }
+    function getAnon(){ return localStorage.getItem('cmsAnon') || ''; }
+    function setAnon(k){ if(k) localStorage.setItem('cmsAnon', k); }
+    function clearAuth(){ localStorage.removeItem('ruminateAuth'); }
 
     const DAYS_SIMPLE = [
       { key: 'mon', label: 'Monday' },
@@ -85,214 +119,158 @@
       { key: 'sun', label: 'Sunday' },
     ];
 
-    function showEditor() {
-      document.getElementById('editor').style.display = 'block';
-      localStorage.setItem('ruminateAuth', 'true');
-    }
-    async function requirePagePassword() {
-      if (localStorage.getItem('ruminateAuth') === 'true') return true;
-      const entered = prompt("Enter page password:");
-      if (entered === VIEW_PASSWORD) { showEditor(); return true; }
-      alert('Incorrect password.'); return false;
-    }
+    function $id(id){ return document.getElementById(id); }
+    function showError(msg){ const e=$id('err'); e.textContent=String(msg||''); e.style.display = msg ? 'block' : 'none'; }
 
-    function getAnon() { return localStorage.getItem('cmsAnon') || ''; }
-    function ensureAnon() {
-      let anon = getAnon();
-      if (!anon) {
-        anon = prompt("Paste your Supabase ANON key (starts with eyJ...)");
-        if (!anon) { alert('Anon key is required to read/write.'); return null; }
-        localStorage.setItem('cmsAnon', anon);
+    // ---- Gate handling ----
+    function openEditor(){
+      $id('gate').style.display='none';
+      $id('editor').style.display='block';
+    }
+    function checkPassword(pw, remember){
+      if(pw === VIEW_PASSWORD){
+        if(remember) localStorage.setItem('ruminateAuth','true');
+        openEditor();
+        return true;
       }
-      return anon;
+      showError('Incorrect page password.');
+      return false;
     }
+    // Persisted bypass
+    if(localStorage.getItem('ruminateAuth')==='true'){ openEditor(); }
 
-    async function apiGetAll() {
-      const anon = ensureAnon(); if (!anon) throw new Error('Missing anon');
-      const res = await fetch(`${FUNCTIONS_URL}/cms-get`, { headers: { 'Authorization': `Bearer ${anon}` } });
-      if (!res.ok) throw new Error(`GET failed: ${res.status}`);
-      return await res.json();
+    // ---- API ----
+    async function apiGetAll(){
+      showError('');
+      const anon = getAnon();
+      if(!anon) throw new Error('Supabase Anon key not set (click “Set Supabase anon key”).');
+      const res = await fetch(`${getFnsUrl()}/cms-get`, { headers:{ 'Authorization': `Bearer ${anon}` }});
+      if(!res.ok) throw new Error(`GET failed: ${res.status}`);
+      return res.json();
     }
-
-    async function apiUpsert(key, value) {
-      const anon = ensureAnon(); if (!anon) throw new Error('Missing anon');
-      const res = await fetch(`${FUNCTIONS_URL}/cms-set`, {
-        method: 'POST',
-        headers: {
+    async function apiUpsert(key, value){
+      showError('');
+      const anon = getAnon();
+      if(!anon) throw new Error('Supabase Anon key not set (click “Set Supabase anon key”).');
+      const res = await fetch(`${getFnsUrl()}/cms-set`, {
+        method:'POST',
+        headers:{
           'Authorization': `Bearer ${anon}`,
-          'content-type': 'application/json',
+          'content-type':'application/json',
           'x-cms-secret': WRITE_SECRET
         },
         body: JSON.stringify({ key, value })
       });
       const out = await res.json().catch(()=>({}));
-      if (!res.ok) throw new Error(out.error || `Save failed (${res.status})`);
+      if(!res.ok) throw new Error(out.error || `Save failed (${res.status})`);
       return out;
     }
 
-    function hoursKey(dayKey, kind) {
-      return `hours.${dayKey}.${kind}`;
-    }
+    // ---- Hours UI ----
+    function hoursKey(dayKey, kind){ return `hours.${dayKey}.${kind}`; }
 
-    function renderHours(map) {
-      const rows = document.getElementById('hoursRows');
-      rows.innerHTML = '';
-
-      DAYS_SIMPLE.forEach(({key, label}) => {
+    function renderHours(map){
+      const rows = $id('hoursRows'); rows.innerHTML='';
+      // Simple days
+      DAYS_SIMPLE.forEach(({key,label})=>{
         const openVal = map[hoursKey(key,'open')] || '';
         const closeVal = map[hoursKey(key,'close')] || '';
+        const row = document.createElement('div'); row.className='hoursRow'; row.dataset.day=key; row.dataset.type='simple';
 
-        const row = document.createElement('div');
-        row.className = 'hoursRow';
-        row.dataset.day = key;
-        row.dataset.type = 'simple';
+        const lab = document.createElement('label'); lab.textContent = label; row.appendChild(lab);
 
-        const lab = document.createElement('label');
-        lab.textContent = label;
-        row.appendChild(lab);
+        const openInp = document.createElement('input'); openInp.type='text'; openInp.placeholder='e.g. 08:00'; openInp.value=openVal; openInp.dataset.kind='open'; row.appendChild(openInp);
+        const closeInp = document.createElement('input'); closeInp.type='text'; closeInp.placeholder='e.g. 17:00'; closeInp.value=closeVal; closeInp.dataset.kind='close'; row.appendChild(closeInp);
 
-        const openInp = document.createElement('input');
-        openInp.type = 'text';
-        openInp.placeholder = 'e.g. 08:00';
-        openInp.value = openVal;
-        openInp.dataset.kind = 'open';
-        row.appendChild(openInp);
-
-        const closeInp = document.createElement('input');
-        closeInp.type = 'text';
-        closeInp.placeholder = 'e.g. 17:00';
-        closeInp.value = closeVal;
-        closeInp.dataset.kind = 'close';
-        row.appendChild(closeInp);
-
-        const saveBtn = document.createElement('button');
-        saveBtn.textContent = 'Save';
-        saveBtn.onclick = async () => {
-          try {
-            await apiUpsert(hoursKey(key,'open'), openInp.value);
-            await apiUpsert(hoursKey(key,'close'), closeInp.value);
-            alert(`${label} saved`);
-          } catch (e) { alert(e.message || 'Save failed'); }
-        };
+        const saveBtn = document.createElement('button'); saveBtn.textContent='Save';
+        saveBtn.onclick = async ()=>{ try{
+          await apiUpsert(hoursKey(key,'open'), openInp.value);
+          await apiUpsert(hoursKey(key,'close'), closeInp.value);
+          alert(`${label} saved`);
+        }catch(e){ showError(e.message||'Save failed'); } };
         row.appendChild(saveBtn);
 
         rows.appendChild(row);
       });
 
-      // Friday row with split hours (open1/close1 for morning, open2/close2 for afternoon/evening)
-      const friRow = document.createElement('div');
-      friRow.className = 'hoursRow';
-      friRow.dataset.day = 'fri';
-      friRow.dataset.type = 'split';
+      // Friday split (Jumu’ah)
+      const fri = document.createElement('div'); fri.className='hoursRow'; fri.dataset.day='fri'; fri.dataset.type='split';
+      const friLab = document.createElement('label'); friLab.textContent = "Friday (Jumu\u2019ah)"; fri.appendChild(friLab);
 
-      const friLab = document.createElement('label');
-      friLab.textContent = 'Friday (Jumu’ah)';
-      friRow.appendChild(friLab);
+      const fOpen1 = document.createElement('input'); fOpen1.type='text'; fOpen1.placeholder='Open 1 (e.g. 08:00)'; fOpen1.value = map[hoursKey('fri','open1')] || ''; fOpen1.dataset.kind='open1'; fri.appendChild(fOpen1);
+      const fClose1 = document.createElement('input'); fClose1.type='text'; fClose1.placeholder='Close 1 (e.g. 12:00)'; fClose1.value = map[hoursKey('fri','close1')] || ''; fClose1.dataset.kind='close1'; fri.appendChild(fClose1);
+      const fOpen2 = document.createElement('input'); fOpen2.type='text'; fOpen2.placeholder='Open 2 (e.g. 14:00)'; fOpen2.value = map[hoursKey('fri','open2')] || ''; fOpen2.dataset.kind='open2'; fri.appendChild(fOpen2);
+      const fClose2 = document.createElement('input'); fClose2.type='text'; fClose2.placeholder='Close 2 (e.g. 18:00)'; fClose2.value = map[hoursKey('fri','close2')] || ''; fClose2.dataset.kind='close2'; fri.appendChild(fClose2);
 
-      const fOpen1 = document.createElement('input');
-      fOpen1.type = 'text';
-      fOpen1.placeholder = 'Open 1 (e.g. 08:00)';
-      fOpen1.value = map[hoursKey('fri','open1')] || '';
-      fOpen1.dataset.kind = 'open1';
-      friRow.appendChild(fOpen1);
+      const friSave = document.createElement('button'); friSave.textContent='Save';
+      friSave.onclick = async ()=>{ try{
+        await apiUpsert(hoursKey('fri','open1'), fOpen1.value);
+        await apiUpsert(hoursKey('fri','close1'), fClose1.value);
+        await apiUpsert(hoursKey('fri','open2'), fOpen2.value);
+        await apiUpsert(hoursKey('fri','close2'), fClose2.value);
+        alert('Friday saved');
+      }catch(e){ showError(e.message||'Save failed'); } };
+      fri.appendChild(friSave);
 
-      const fClose1 = document.createElement('input');
-      fClose1.type = 'text';
-      fClose1.placeholder = 'Close 1 (e.g. 12:00)';
-      fClose1.value = map[hoursKey('fri','close1')] || '';
-      fClose1.dataset.kind = 'close1';
-      friRow.appendChild(fClose1);
-
-      const fOpen2 = document.createElement('input');
-      fOpen2.type = 'text';
-      fOpen2.placeholder = 'Open 2 (e.g. 14:00)';
-      fOpen2.value = map[hoursKey('fri','open2')] || '';
-      fOpen2.dataset.kind = 'open2';
-      friRow.appendChild(fOpen2);
-
-      const fClose2 = document.createElement('input');
-      fClose2.type = 'text';
-      fClose2.placeholder = 'Close 2 (e.g. 18:00)';
-      fClose2.value = map[hoursKey('fri','close2')] || '';
-      fClose2.dataset.kind = 'close2';
-      friRow.appendChild(fClose2);
-
-      const friSave = document.createElement('button');
-      friSave.textContent = 'Save';
-      friSave.onclick = async () => {
-        try {
-          await apiUpsert(hoursKey('fri','open1'), fOpen1.value);
-          await apiUpsert(hoursKey('fri','close1'), fClose1.value);
-          await apiUpsert(hoursKey('fri','open2'), fOpen2.value);
-          await apiUpsert(hoursKey('fri','close2'), fClose2.value);
-          alert('Friday saved');
-        } catch (e) { alert(e.message || 'Save failed'); }
-      };
-      friRow.appendChild(friSave);
-
-      rows.appendChild(friRow);
+      rows.appendChild(fri);
     }
 
-    function renderList(map) {
-      const list = document.getElementById('list');
-      list.innerHTML = '';
-      const keys = Object.keys(map || {}).sort();
-      if (keys.length === 0) { list.innerHTML = '<div>No entries yet.</div>'; return; }
-      keys.forEach(k => {
-        const row = document.createElement('div'); row.className = 'row';
-        const lab = document.createElement('label'); lab.textContent = k; row.appendChild(lab);
-        const inp = document.createElement('input'); inp.type = 'text'; inp.value = map[k] || ''; row.appendChild(inp);
-        const saveBtn = document.createElement('button'); saveBtn.textContent = 'Save';
-        saveBtn.onclick = async () => {
-          try { await apiUpsert(k, inp.value); alert('Saved'); }
-          catch (e) { alert(e.message || 'Save failed'); }
-        };
+    function renderList(map){
+      const list = $id('list'); list.innerHTML='';
+      const keys = Object.keys(map||{}).sort();
+      if(!keys.length){ list.innerHTML = '<div>No entries yet.</div>'; return; }
+      keys.forEach(k=>{
+        const row = document.createElement('div'); row.className='row';
+        const lab = document.createElement('label'); lab.textContent=k; row.appendChild(lab);
+        const inp = document.createElement('input'); inp.type='text'; inp.value=map[k]||''; row.appendChild(inp);
+        const saveBtn = document.createElement('button'); saveBtn.textContent='Save';
+        saveBtn.onclick = async ()=>{ try{ await apiUpsert(k, inp.value); alert('Saved'); }catch(e){ showError(e.message||'Save failed'); } };
         row.appendChild(saveBtn);
         list.appendChild(row);
       });
     }
 
-    async function loadAll() {
-      const data = await apiGetAll();
-      renderHours(data);
-      renderList(data);
+    async function loadAll(){
+      try{
+        const data = await apiGetAll();
+        renderHours(data);
+        renderList(data);
+      }catch(e){ showError(e.message||'Load failed'); }
     }
 
-    document.getElementById('addForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const key = (document.getElementById('newKey').value || '').trim();
-      const val = document.getElementById('newVal').value || '';
-      if (!key) return;
-      try {
-        await apiUpsert(key, val);
-        document.getElementById('newKey').value = '';
-        document.getElementById('newVal').value = '';
-        await loadAll();
-      } catch (e) { alert(e.message || 'Save failed'); }
+    // ---- Events ----
+    $id('enter').addEventListener('click', ()=>{
+      const ok = checkPassword($id('pw').value, false);
+      if(ok && !getAnon()) alert('Click “Set Supabase anon key” (top bar) to enable saving.');
+      if(ok) loadAll();
+    });
+    $id('remember').addEventListener('click', ()=>{
+      const ok = checkPassword($id('pw').value, true);
+      if(ok && !getAnon()) alert('Click “Set Supabase anon key” (top bar) to enable saving.');
+      if(ok) loadAll();
     });
 
-    document.getElementById('resetAuth').addEventListener('click', () => {
-      localStorage.removeItem('ruminateAuth');
-      alert('Page password reset. Reload to re-enter.');
+    $id('resetAuth').addEventListener('click', ()=>{ clearAuth(); alert('Page password reset. Reload to re-enter.'); location.reload(); });
+    $id('setAnon').addEventListener('click', ()=>{
+      const next = prompt('Paste your Supabase ANON key:', getAnon()||'');
+      if(next){ setAnon(next); alert('Anon key saved.'); }
+    });
+    $id('setFnsUrl').addEventListener('click', ()=>{
+      const next = prompt('Supabase Functions URL:', getFnsUrl());
+      if(next){ setFnsUrl(next); alert('Functions URL saved.'); }
     });
 
-    document.getElementById('setAnon').addEventListener('click', () => {
-      const current = getAnon();
-      const next = prompt('Paste your Supabase ANON key:', current || '');
-      if (next) { localStorage.setItem('cmsAnon', next); alert('Anon key saved.'); }
-    });
-
-    document.getElementById('saveHoursAll').addEventListener('click', async () => {
-      try {
+    $id('saveHoursAll').addEventListener('click', async ()=>{
+      try{
         const rows = document.querySelectorAll('#hoursRows .hoursRow');
-        for (const row of rows) {
+        for(const row of rows){
           const day = row.dataset.day;
-          if (row.dataset.type === 'simple') {
+          if(row.dataset.type==='simple'){
             const openVal = row.querySelector('input[data-kind="open"]').value;
             const closeVal = row.querySelector('input[data-kind="close"]').value;
             await apiUpsert(hoursKey(day,'open'), openVal);
             await apiUpsert(hoursKey(day,'close'), closeVal);
-          } else if (row.dataset.type === 'split' && day === 'fri') {
+          }else if(row.dataset.type==='split' && day==='fri'){
             const open1 = row.querySelector('input[data-kind="open1"]').value;
             const close1 = row.querySelector('input[data-kind="close1"]').value;
             const open2 = row.querySelector('input[data-kind="open2"]').value;
@@ -304,14 +282,24 @@
           }
         }
         alert('All hours saved');
-      } catch (e) { alert(e.message || 'Save failed'); }
+      }catch(e){ showError(e.message||'Save failed'); }
     });
 
-    (async () => {
-      const ok = await requirePagePassword(); if (!ok) return;
-      if (!ensureAnon()) return;
-      await loadAll();
-    })();
+    document.getElementById('addForm').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const key = (document.getElementById('newKey').value||'').trim();
+      const val = document.getElementById('newVal').value||'';
+      if(!key) return;
+      try{
+        await apiUpsert(key, val);
+        document.getElementById('newKey').value='';
+        document.getElementById('newVal').value='';
+        await loadAll();
+      }catch(e){ showError(e.message||'Save failed'); }
+    });
+
+    // If remembered auth, load immediately
+    if(localStorage.getItem('ruminateAuth')==='true'){ loadAll(); }
   </script>
 </body>
 </html>
