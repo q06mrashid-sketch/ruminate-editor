@@ -96,6 +96,14 @@
 
       <div id="list" class="list"></div>
     </div>
+    <!-- Menu editor -->
+<div class="section">
+  <h2>Menu items</h2>
+  <div class="hint">
+    Use existing CMS keys and labels to build the menu. Set a price for each item. Click “Add to menu” to include it, or “Remove from menu” to remove it.
+  </div>
+  <div id="menuList" class="list"></div>
+</div>
   </div>
 
   <script>
@@ -165,7 +173,61 @@
       if(!res.ok) throw new Error(out.error || `Save failed (${res.status})`);
       return out;
     }
+// ---- Menu API ----
+async function apiGetMenuItems() {
+  showError('');
+  const anon = getAnon();
+  if (!anon) throw new Error('Supabase Anon key not set (click “Set Supabase anon key”).');
+  const res = await fetch(`${getFnsUrl()}/cms-menu-get`, {
+    headers: { 'Authorization': `Bearer ${anon}` }
+  });
+  if (!res.ok) throw new Error(`Menu GET failed: ${res.status}`);
+  return res.json(); // returns array of { key, label, price }
+}
 
+// ---- Menu API ----
+// Existing definitions assumed; update them as follows:
+
+async function apiAddMenuItem(keySuffix, label, price) {
+  showError('');
+  const anon = getAnon();
+  if (!anon) throw new Error('Supabase Anon key not set (click “Set Supabase anon key”).');
+  // Prefix the keys automatically
+  const menuKey  = 'menu.'  + keySuffix;
+  const priceKey = 'price.' + keySuffix;
+  const res = await fetch(`${getFnsUrl()}/cms-menu-add`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${anon}`,
+      'content-type': 'application/json',
+      'x-cms-secret': WRITE_SECRET,
+    },
+    body: JSON.stringify({ key: menuKey, label, price }),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || `Add failed (${res.status})`);
+  return out;
+}
+
+async function apiRemoveMenuItem(keySuffix) {
+  showError('');
+  const anon = getAnon();
+  if (!anon) throw new Error('Supabase Anon key not set (click “Set Supabase anon key”).');
+  // Prefix the key when removing
+  const menuKey = 'menu.' + keySuffix;
+  const res = await fetch(`${getFnsUrl()}/cms-menu-remove`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${anon}`,
+      'content-type': 'application/json',
+      'x-cms-secret': WRITE_SECRET,
+    },
+    body: JSON.stringify({ key: menuKey }),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || `Remove failed (${res.status})`);
+  return out;
+}
     // ---- Hours UI ----
     function hoursKey(dayKey, kind){ return `hours.${dayKey}.${kind}`; }
 
@@ -229,14 +291,93 @@
         list.appendChild(row);
       });
     }
-
-    async function loadAll(){
-      try{
-        const data = await apiGetAll();
-        renderHours(data);
-        renderList(data);
-      }catch(e){ showError(e.message||'Load failed'); }
+function renderMenu(map, menuItems) {
+  const list = $id('menuList');
+  list.innerHTML = '';
+  const keys = Object.keys(map || {}).sort();
+  const menuMap = {};
+  // Convert 'menu.<suffix>' from Supabase into its suffix for matching
+  (menuItems || []).forEach((item) => {
+    if (item && item.key && item.key.startsWith('menu.')) {
+      const suffix = item.key.slice('menu.'.length);
+      menuMap[suffix] = item;
     }
+  });
+  if (!keys.length) {
+    list.innerHTML = '<div>No entries yet.</div>';
+    return;
+  }
+  keys.forEach((k) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    // Display the original key (suffix)
+    const lab = document.createElement('label');
+    lab.textContent = k;
+    row.appendChild(lab);
+    // Read-only label value
+    const valInp = document.createElement('input');
+    valInp.type = 'text';
+    valInp.value = map[k] || '';
+    valInp.disabled = true;
+    row.appendChild(valInp);
+    // Price input field
+    const priceInp = document.createElement('input');
+    priceInp.type = 'number';
+    priceInp.min = '0';
+    priceInp.step = '0.01';
+    priceInp.placeholder = 'Price';
+    priceInp.style.width = '80px';
+    if (menuMap[k]) priceInp.value = menuMap[k].price || '';
+    row.appendChild(priceInp);
+    // Add/Remove button
+    const btn = document.createElement('button');
+    if (menuMap[k]) {
+      btn.textContent = 'Remove from menu';
+      btn.onclick = async () => {
+        try {
+          await apiRemoveMenuItem(k);
+          await loadAll();
+        } catch (e) {
+          showError(e.message || 'Remove failed');
+        }
+      };
+    } else {
+      btn.textContent = 'Add to menu';
+      btn.onclick = async () => {
+        const priceVal = priceInp.value;
+        if (priceVal === '') {
+          alert('Please enter a price');
+          return;
+        }
+        try {
+          await apiAddMenuItem(k, map[k], priceVal);
+          await loadAll();
+        } catch (e) {
+          showError(e.message || 'Add failed');
+        }
+      };
+    }
+    row.appendChild(btn);
+    list.appendChild(row);
+  });
+}
+    async function loadAll() {
+  try {
+    const data = await apiGetAll();
+    renderHours(data);
+    renderList(data);
+    try {
+      // load menu items after CMS data
+      const menuItems = await apiGetMenuItems();
+      renderMenu(data, menuItems);
+    } catch (e) {
+      // If menu endpoints are unavailable, ignore silently
+      console.warn(e);
+    }
+  } catch (e) {
+    showError(e.message || 'Load failed');
+  }
+}
 
     // ---- Events ----
     $id('enter').addEventListener('click', ()=>{
